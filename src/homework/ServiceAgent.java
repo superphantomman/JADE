@@ -14,7 +14,6 @@ import java.io.DataOutputStream;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLEncoder;
-import java.util.HashSet;
 import java.util.Set;
 
 
@@ -24,20 +23,24 @@ public class ServiceAgent extends Agent {
         DFAgentDescription dfad = new DFAgentDescription();
         dfad.setName(getAID());
 
+        ServiceDescription sd1 = new ServiceDescription();
+        sd1.setType("answers");
+        sd1.setName("wordnet");
+
         //service desription
-        ServiceDescription sd = new ServiceDescription();
-        sd.setType("answers");
-        sd.setName("dictionary");
+        ServiceDescription sd2 = new ServiceDescription();
+        sd2.setType("answers");
+        sd2.setName("dictionary");
 
 
-        dfad.addServices(sd);
+        dfad.addServices(sd2);
         try {
             DFService.register(this, dfad);
         } catch (FIPAException ex) {
             ex.printStackTrace();
         }
 
-
+        addBehaviour(new WordnetCyclicBehaviour(this));
         addBehaviour(new DictionaryCyclicBehaviour(this));
         //doDelete();
     }
@@ -52,7 +55,7 @@ public class ServiceAgent extends Agent {
     }
 
     public String makeRequest(String serviceName, String word) {
-        StringBuffer response = new StringBuffer();
+        StringBuilder response = new StringBuilder();
         try {
             URL url;
             URLConnection urlConn;
@@ -85,18 +88,59 @@ public class ServiceAgent extends Agent {
     }
 }
 
+
+class WordnetCyclicBehaviour extends CyclicBehaviour
+{
+    ServiceAgent agent;
+    public WordnetCyclicBehaviour(ServiceAgent agent)
+    {
+        this.agent = agent;
+    }
+    public void action()
+    {
+        MessageTemplate template = MessageTemplate.MatchOntology("wordnet");
+        ACLMessage message = agent.receive(template);
+        if (message == null)
+        {
+            block();
+        }
+        else
+        {
+            //process the incoming message
+            String content = message.getContent();
+            ACLMessage reply = message.createReply();
+            reply.setPerformative(ACLMessage.INFORM);
+            String response = "";
+            try
+            {
+                response = agent.makeRequest("wn",content);
+            }
+            catch (NumberFormatException ex)
+            {
+                response = ex.getMessage();
+            }
+            reply.setContent(response);
+            agent.send(reply);
+        }
+    }
+}
+
 /**
  * DictionaryCyclicBehaviour behaviour of agent.
  * Resolve requests for agent in format "database:word" or "word".
- * */
+ */
 class DictionaryCyclicBehaviour extends CyclicBehaviour {
     protected ServiceAgent agent;
     //Databases present on site
-    private Set<String> databases = new HashSet<>();
+
 
     public DictionaryCyclicBehaviour(ServiceAgent agent) {
         this.agent = agent;
-        databases = Set.of("*", "!", "gcide", "wn", "moby-thesaurus", "elements",
+
+    }
+
+    private static Set<String> getDatabases() {
+        return Set.of("*", "!", "gcide", "wn", "moby-thesaurus", "elements",
                 "vera", "jargon", "foldoc", "easton", "hitchcock", "bouvier", "devil", "world02", "gaz2k-counties",
                 "gaz2k-places", "gaz2k-zips", "fd-hrv-eng", "fd-fin-por", "fd-fin-bul", "fd-fra-bul", "fd-deu-swe",
                 "fd-fin-swe", "fd-jpn-rus", "fd-wol-fra", "fd-fra-pol", "fd-eng-deu", "fd-deu-nld", "fd-por-eng", "fd-spa-deu",
@@ -104,40 +148,52 @@ class DictionaryCyclicBehaviour extends CyclicBehaviour {
                 "fd-ckb-kmr", "fd-ita-eng", "fd-pol-eng", "fd-gle-eng", "fd-eng-tur", "fd-gle-pol", "fd-pol-deu", "fd-fra-spa",
                 "fd-lit-eng", "fd-eng-jpn", "fd-ara-eng", "fd-nld-ita", "fd-eng-lat", "fd-eng-hun", "fd-ita-jpn", "fd-dan-eng",
                 "fd-hun-eng");
-)
     }
 
     public void action() {
+        System.out.println("Action");
         final MessageTemplate template = MessageTemplate.MatchOntology("dictionary");
         final ACLMessage message = agent.receive(template);
+
         if (message == null) {
             block();
-        } else {
-            final String[] messageContent;
-            String serviceName = null;
-            final String content;
-
-            if (message.getContent().contains(":")) {
-                messageContent = message.getContent().split(":");
-                serviceName = messageContent[0];
-                content = messageContent[1];
-            } else {
-                content = message.getContent();
-            }
-
-            if( serviceName == null || !databases.contains(serviceName))
-                serviceName = "wn";
-
-            ACLMessage reply = message.createReply();
-            reply.setPerformative(ACLMessage.INFORM);
-            String response;
-            try {
-                response = agent.makeRequest(serviceName, content);
-            } catch (NumberFormatException ex) {
-                response = ex.getMessage();
-            }
-            reply.setContent(response);
-            agent.send(reply);
+            return;
         }
+
+        String serviceName = null;
+        final String content;
+
+        //Assigment serviceName and content
+        if (message.getContent().contains(":")) {
+            final String[] messageContent;
+            messageContent = message.getContent().split(":");
+            serviceName = messageContent[0];
+            content = messageContent[1];
+        } else {
+            content = message.getContent();
+        }
+        final var databases = getDatabases();
+        if (serviceName == null || !databases.contains(serviceName))
+            serviceName = "wn";
+        //End of assigment
+
+        ACLMessage reply = message.createReply();
+        reply.setPerformative(ACLMessage.INFORM);
+
+        reply.setContent(getResponse(serviceName, content));
+        System.out.println(getResponse(serviceName,content));
+        agent.send(reply);
+        System.out.println("End action");
+    }
+
+    private String getResponse(String serviceName, String content) {
+        String response;
+        try {
+            System.out.println("Get response");
+            response = agent.makeRequest(serviceName, content);
+        } catch (NumberFormatException ex) {
+            response = ex.getMessage();
+        }
+        return response;
     }
 }
