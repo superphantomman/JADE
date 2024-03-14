@@ -50,6 +50,8 @@ public class DictionaryServiceAgent extends Agent {
         StringBuffer response = new StringBuffer();
         try {
             URL url;
+            System.out.println("ServiceName:" + serviceName);
+            System.out.println("word:"+word);
             URLConnection urlConn;
             DataOutputStream printout;
             DataInputStream input;
@@ -73,6 +75,7 @@ public class DictionaryServiceAgent extends Agent {
             }
             input.close();
         } catch (Exception ex) {
+            System.out.println("makeRequest problem");
             System.out.println(ex.getMessage());
         }
         //cut what is unnecessary
@@ -94,17 +97,20 @@ class AskCyclicBehaviour extends CyclicBehaviour {
 
         if (message == null) {
             block();
-            return;
+        } else {
+
+            String content = message.getContent();
+            String language = message.getLanguage();
+
+            //TODO Language equal null ask tutor
+            System.out.println("language:" + language);
+
+            ACLMessage reply = message.createReply();
+
+            reply.setPerformative(ACLMessage.INFORM);
+            reply.setContent(getResponse(language, content));
+            agent.send(reply);
         }
-
-        String content = message.getContent();
-        String language = message.getLanguage();
-
-        ACLMessage reply = message.createReply();
-
-        reply.setPerformative(ACLMessage.INFORM);
-        reply.setContent(getResponse(language, content));
-        agent.send(reply);
 
     }
 
